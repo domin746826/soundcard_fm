@@ -1,0 +1,590 @@
+`define REG_SIZE 25
+`define AUDIO_WIDTH 16
+`define PHASE_INC 25'd15049163 // for 89.7 & 180M
+// `define PHASE_INC 25'd14_332_536 // for 89.7 & 180M
+
+
+module fm_stereo_encoder (
+    input clk10m,
+    input wire signed [`AUDIO_WIDTH-1:0] left_channel,
+    input wire signed [`AUDIO_WIDTH-1:0] right_channel,
+    output reg signed [`REG_SIZE-1:0] radio_current_sample
+);
+
+wire clk_9_5m_int;
+wire clk_9_5m;
+
+DCM_SP #(
+    .CLKFX_MULTIPLY(19), 
+    .CLKFX_DIVIDE(20), 
+    .CLKIN_PERIOD(100.0),
+    .CLK_FEEDBACK("NONE"),
+    .STARTUP_WAIT("FALSE")
+) dcm_sp_inst (
+    .CLKFX(clk_9_5m_int),
+    .CLKIN(clk10m),
+    .RST(1'b0),
+    .LOCKED(),
+    .CLK0(), .CLK2X(), .CLK90(), .CLK180(), .CLK270(),
+    .CLKDV(), .CLKFX180(), .STATUS(), .PSCLK(), .PSEN(), .PSINCDEC(), .PSDONE()
+);
+
+BUFG bufg_clk_9_5m (.I(clk_9_5m_int), .O(clk_9_5m));
+
+reg signed [`AUDIO_WIDTH:0] audio_sum;
+reg signed [`AUDIO_WIDTH-1:0] audio_diff;
+
+reg signed [`AUDIO_WIDTH:0] audio_sum_675k;
+reg signed [`AUDIO_WIDTH-1:0] audio_diff_675k;
+
+reg [7:0] phase_38k = 0;
+reg [7:0] phase_19k = 0;
+reg phase_div_by_two = 0;
+
+
+reg signed [11:0] current_pilot_val = 0;
+
+reg signed [`AUDIO_WIDTH-1:0] current_38k_value = 0;
+reg signed [`AUDIO_WIDTH:0] audio_current_sample = 0;
+
+reg signed [`AUDIO_WIDTH*2-1:0] diff_modulated = 0;
+reg signed [`AUDIO_WIDTH-1:0] diff_modulated_scaled = 0;
+always @(posedge clk_9_5m) begin
+    audio_sum <= left_channel + right_channel;
+    audio_diff <= left_channel - right_channel;
+    audio_sum_675k <= (audio_sum * 50)>>>8;
+    audio_diff_675k <= (audio_diff * 50)>>>7;
+    if(phase_38k == 249) begin
+        phase_38k <= 0;
+    end else begin
+        phase_38k <= phase_38k + 8'd1;        
+    end
+
+    case(phase_38k)
+        8'd0   : current_38k_value <= 16'sd0;
+        8'd1   : current_38k_value <= 16'sd823;
+        8'd2   : current_38k_value <= 16'sd1646;
+        8'd3   : current_38k_value <= 16'sd2468;
+        8'd4   : current_38k_value <= 16'sd3289;
+        8'd5   : current_38k_value <= 16'sd4107;
+        8'd6   : current_38k_value <= 16'sd4922;
+        8'd7   : current_38k_value <= 16'sd5735;
+        8'd8   : current_38k_value <= 16'sd6544;
+        8'd9   : current_38k_value <= 16'sd7349;
+        8'd10  : current_38k_value <= 16'sd8149;
+        8'd11  : current_38k_value <= 16'sd8944;
+        8'd12  : current_38k_value <= 16'sd9733;
+        8'd13  : current_38k_value <= 16'sd10516;
+        8'd14  : current_38k_value <= 16'sd11293;
+        8'd15  : current_38k_value <= 16'sd12062;
+        8'd16  : current_38k_value <= 16'sd12824;
+        8'd17  : current_38k_value <= 16'sd13578;
+        8'd18  : current_38k_value <= 16'sd14323;
+        8'd19  : current_38k_value <= 16'sd15059;
+        8'd20  : current_38k_value <= 16'sd15786;
+        8'd21  : current_38k_value <= 16'sd16502;
+        8'd22  : current_38k_value <= 16'sd17208;
+        8'd23  : current_38k_value <= 16'sd17904;
+        8'd24  : current_38k_value <= 16'sd18588;
+        8'd25  : current_38k_value <= 16'sd19260;
+        8'd26  : current_38k_value <= 16'sd19920;
+        8'd27  : current_38k_value <= 16'sd20568;
+        8'd28  : current_38k_value <= 16'sd21202;
+        8'd29  : current_38k_value <= 16'sd21823;
+        8'd30  : current_38k_value <= 16'sd22431;
+        8'd31  : current_38k_value <= 16'sd23024;
+        8'd32  : current_38k_value <= 16'sd23602;
+        8'd33  : current_38k_value <= 16'sd24166;
+        8'd34  : current_38k_value <= 16'sd24715;
+        8'd35  : current_38k_value <= 16'sd25247;
+        8'd36  : current_38k_value <= 16'sd25764;
+        8'd37  : current_38k_value <= 16'sd26265;
+        8'd38  : current_38k_value <= 16'sd26749;
+        8'd39  : current_38k_value <= 16'sd27216;
+        8'd40  : current_38k_value <= 16'sd27666;
+        8'd41  : current_38k_value <= 16'sd28099;
+        8'd42  : current_38k_value <= 16'sd28513;
+        8'd43  : current_38k_value <= 16'sd28910;
+        8'd44  : current_38k_value <= 16'sd29289;
+        8'd45  : current_38k_value <= 16'sd29648;
+        8'd46  : current_38k_value <= 16'sd29990;
+        8'd47  : current_38k_value <= 16'sd30312;
+        8'd48  : current_38k_value <= 16'sd30615;
+        8'd49  : current_38k_value <= 16'sd30899;
+        8'd50  : current_38k_value <= 16'sd31163;
+        8'd51  : current_38k_value <= 16'sd31408;
+        8'd52  : current_38k_value <= 16'sd31633;
+        8'd53  : current_38k_value <= 16'sd31837;
+        8'd54  : current_38k_value <= 16'sd32022;
+        8'd55  : current_38k_value <= 16'sd32187;
+        8'd56  : current_38k_value <= 16'sd32331;
+        8'd57  : current_38k_value <= 16'sd32454;
+        8'd58  : current_38k_value <= 16'sd32558;
+        8'd59  : current_38k_value <= 16'sd32640;
+        8'd60  : current_38k_value <= 16'sd32702;
+        8'd61  : current_38k_value <= 16'sd32744;
+        8'd62  : current_38k_value <= 16'sd32764;
+        8'd63  : current_38k_value <= 16'sd32764;
+        8'd64  : current_38k_value <= 16'sd32744;
+        8'd65  : current_38k_value <= 16'sd32702;
+        8'd66  : current_38k_value <= 16'sd32640;
+        8'd67  : current_38k_value <= 16'sd32558;
+        8'd68  : current_38k_value <= 16'sd32454;
+        8'd69  : current_38k_value <= 16'sd32331;
+        8'd70  : current_38k_value <= 16'sd32187;
+        8'd71  : current_38k_value <= 16'sd32022;
+        8'd72  : current_38k_value <= 16'sd31837;
+        8'd73  : current_38k_value <= 16'sd31633;
+        8'd74  : current_38k_value <= 16'sd31408;
+        8'd75  : current_38k_value <= 16'sd31163;
+        8'd76  : current_38k_value <= 16'sd30899;
+        8'd77  : current_38k_value <= 16'sd30615;
+        8'd78  : current_38k_value <= 16'sd30312;
+        8'd79  : current_38k_value <= 16'sd29990;
+        8'd80  : current_38k_value <= 16'sd29648;
+        8'd81  : current_38k_value <= 16'sd29289;
+        8'd82  : current_38k_value <= 16'sd28910;
+        8'd83  : current_38k_value <= 16'sd28513;
+        8'd84  : current_38k_value <= 16'sd28099;
+        8'd85  : current_38k_value <= 16'sd27666;
+        8'd86  : current_38k_value <= 16'sd27216;
+        8'd87  : current_38k_value <= 16'sd26749;
+        8'd88  : current_38k_value <= 16'sd26265;
+        8'd89  : current_38k_value <= 16'sd25764;
+        8'd90  : current_38k_value <= 16'sd25247;
+        8'd91  : current_38k_value <= 16'sd24715;
+        8'd92  : current_38k_value <= 16'sd24166;
+        8'd93  : current_38k_value <= 16'sd23602;
+        8'd94  : current_38k_value <= 16'sd23024;
+        8'd95  : current_38k_value <= 16'sd22431;
+        8'd96  : current_38k_value <= 16'sd21823;
+        8'd97  : current_38k_value <= 16'sd21202;
+        8'd98  : current_38k_value <= 16'sd20568;
+        8'd99  : current_38k_value <= 16'sd19920;
+        8'd100 : current_38k_value <= 16'sd19260;
+        8'd101 : current_38k_value <= 16'sd18588;
+        8'd102 : current_38k_value <= 16'sd17904;
+        8'd103 : current_38k_value <= 16'sd17208;
+        8'd104 : current_38k_value <= 16'sd16502;
+        8'd105 : current_38k_value <= 16'sd15786;
+        8'd106 : current_38k_value <= 16'sd15059;
+        8'd107 : current_38k_value <= 16'sd14323;
+        8'd108 : current_38k_value <= 16'sd13578;
+        8'd109 : current_38k_value <= 16'sd12824;
+        8'd110 : current_38k_value <= 16'sd12062;
+        8'd111 : current_38k_value <= 16'sd11293;
+        8'd112 : current_38k_value <= 16'sd10516;
+        8'd113 : current_38k_value <= 16'sd9733;
+        8'd114 : current_38k_value <= 16'sd8944;
+        8'd115 : current_38k_value <= 16'sd8149;
+        8'd116 : current_38k_value <= 16'sd7349;
+        8'd117 : current_38k_value <= 16'sd6544;
+        8'd118 : current_38k_value <= 16'sd5735;
+        8'd119 : current_38k_value <= 16'sd4922;
+        8'd120 : current_38k_value <= 16'sd4107;
+        8'd121 : current_38k_value <= 16'sd3289;
+        8'd122 : current_38k_value <= 16'sd2468;
+        8'd123 : current_38k_value <= 16'sd1646;
+        8'd124 : current_38k_value <= 16'sd823;
+        8'd125 : current_38k_value <= 16'sd0;
+        8'd126 : current_38k_value <= -16'sd823;
+        8'd127 : current_38k_value <= -16'sd1646;
+        8'd128 : current_38k_value <= -16'sd2468;
+        8'd129 : current_38k_value <= -16'sd3289;
+        8'd130 : current_38k_value <= -16'sd4107;
+        8'd131 : current_38k_value <= -16'sd4922;
+        8'd132 : current_38k_value <= -16'sd5735;
+        8'd133 : current_38k_value <= -16'sd6544;
+        8'd134 : current_38k_value <= -16'sd7349;
+        8'd135 : current_38k_value <= -16'sd8149;
+        8'd136 : current_38k_value <= -16'sd8944;
+        8'd137 : current_38k_value <= -16'sd9733;
+        8'd138 : current_38k_value <= -16'sd10516;
+        8'd139 : current_38k_value <= -16'sd11293;
+        8'd140 : current_38k_value <= -16'sd12062;
+        8'd141 : current_38k_value <= -16'sd12824;
+        8'd142 : current_38k_value <= -16'sd13578;
+        8'd143 : current_38k_value <= -16'sd14323;
+        8'd144 : current_38k_value <= -16'sd15059;
+        8'd145 : current_38k_value <= -16'sd15786;
+        8'd146 : current_38k_value <= -16'sd16502;
+        8'd147 : current_38k_value <= -16'sd17208;
+        8'd148 : current_38k_value <= -16'sd17904;
+        8'd149 : current_38k_value <= -16'sd18588;
+        8'd150 : current_38k_value <= -16'sd19260;
+        8'd151 : current_38k_value <= -16'sd19920;
+        8'd152 : current_38k_value <= -16'sd20568;
+        8'd153 : current_38k_value <= -16'sd21202;
+        8'd154 : current_38k_value <= -16'sd21823;
+        8'd155 : current_38k_value <= -16'sd22431;
+        8'd156 : current_38k_value <= -16'sd23024;
+        8'd157 : current_38k_value <= -16'sd23602;
+        8'd158 : current_38k_value <= -16'sd24166;
+        8'd159 : current_38k_value <= -16'sd24715;
+        8'd160 : current_38k_value <= -16'sd25247;
+        8'd161 : current_38k_value <= -16'sd25764;
+        8'd162 : current_38k_value <= -16'sd26265;
+        8'd163 : current_38k_value <= -16'sd26749;
+        8'd164 : current_38k_value <= -16'sd27216;
+        8'd165 : current_38k_value <= -16'sd27666;
+        8'd166 : current_38k_value <= -16'sd28099;
+        8'd167 : current_38k_value <= -16'sd28513;
+        8'd168 : current_38k_value <= -16'sd28910;
+        8'd169 : current_38k_value <= -16'sd29289;
+        8'd170 : current_38k_value <= -16'sd29648;
+        8'd171 : current_38k_value <= -16'sd29990;
+        8'd172 : current_38k_value <= -16'sd30312;
+        8'd173 : current_38k_value <= -16'sd30615;
+        8'd174 : current_38k_value <= -16'sd30899;
+        8'd175 : current_38k_value <= -16'sd31163;
+        8'd176 : current_38k_value <= -16'sd31408;
+        8'd177 : current_38k_value <= -16'sd31633;
+        8'd178 : current_38k_value <= -16'sd31837;
+        8'd179 : current_38k_value <= -16'sd32022;
+        8'd180 : current_38k_value <= -16'sd32187;
+        8'd181 : current_38k_value <= -16'sd32331;
+        8'd182 : current_38k_value <= -16'sd32454;
+        8'd183 : current_38k_value <= -16'sd32558;
+        8'd184 : current_38k_value <= -16'sd32640;
+        8'd185 : current_38k_value <= -16'sd32702;
+        8'd186 : current_38k_value <= -16'sd32744;
+        8'd187 : current_38k_value <= -16'sd32764;
+        8'd188 : current_38k_value <= -16'sd32764;
+        8'd189 : current_38k_value <= -16'sd32744;
+        8'd190 : current_38k_value <= -16'sd32702;
+        8'd191 : current_38k_value <= -16'sd32640;
+        8'd192 : current_38k_value <= -16'sd32558;
+        8'd193 : current_38k_value <= -16'sd32454;
+        8'd194 : current_38k_value <= -16'sd32331;
+        8'd195 : current_38k_value <= -16'sd32187;
+        8'd196 : current_38k_value <= -16'sd32022;
+        8'd197 : current_38k_value <= -16'sd31837;
+        8'd198 : current_38k_value <= -16'sd31633;
+        8'd199 : current_38k_value <= -16'sd31408;
+        8'd200 : current_38k_value <= -16'sd31163;
+        8'd201 : current_38k_value <= -16'sd30899;
+        8'd202 : current_38k_value <= -16'sd30615;
+        8'd203 : current_38k_value <= -16'sd30312;
+        8'd204 : current_38k_value <= -16'sd29990;
+        8'd205 : current_38k_value <= -16'sd29648;
+        8'd206 : current_38k_value <= -16'sd29289;
+        8'd207 : current_38k_value <= -16'sd28910;
+        8'd208 : current_38k_value <= -16'sd28513;
+        8'd209 : current_38k_value <= -16'sd28099;
+        8'd210 : current_38k_value <= -16'sd27666;
+        8'd211 : current_38k_value <= -16'sd27216;
+        8'd212 : current_38k_value <= -16'sd26749;
+        8'd213 : current_38k_value <= -16'sd26265;
+        8'd214 : current_38k_value <= -16'sd25764;
+        8'd215 : current_38k_value <= -16'sd25247;
+        8'd216 : current_38k_value <= -16'sd24715;
+        8'd217 : current_38k_value <= -16'sd24166;
+        8'd218 : current_38k_value <= -16'sd23602;
+        8'd219 : current_38k_value <= -16'sd23024;
+        8'd220 : current_38k_value <= -16'sd22431;
+        8'd221 : current_38k_value <= -16'sd21823;
+        8'd222 : current_38k_value <= -16'sd21202;
+        8'd223 : current_38k_value <= -16'sd20568;
+        8'd224 : current_38k_value <= -16'sd19920;
+        8'd225 : current_38k_value <= -16'sd19260;
+        8'd226 : current_38k_value <= -16'sd18588;
+        8'd227 : current_38k_value <= -16'sd17904;
+        8'd228 : current_38k_value <= -16'sd17208;
+        8'd229 : current_38k_value <= -16'sd16502;
+        8'd230 : current_38k_value <= -16'sd15786;
+        8'd231 : current_38k_value <= -16'sd15059;
+        8'd232 : current_38k_value <= -16'sd14323;
+        8'd233 : current_38k_value <= -16'sd13578;
+        8'd234 : current_38k_value <= -16'sd12824;
+        8'd235 : current_38k_value <= -16'sd12062;
+        8'd236 : current_38k_value <= -16'sd11293;
+        8'd237 : current_38k_value <= -16'sd10516;
+        8'd238 : current_38k_value <= -16'sd9733;
+        8'd239 : current_38k_value <= -16'sd8944;
+        8'd240 : current_38k_value <= -16'sd8149;
+        8'd241 : current_38k_value <= -16'sd7349;
+        8'd242 : current_38k_value <= -16'sd6544;
+        8'd243 : current_38k_value <= -16'sd5735;
+        8'd244 : current_38k_value <= -16'sd4922;
+        8'd245 : current_38k_value <= -16'sd4107;
+        8'd246 : current_38k_value <= -16'sd3289;
+        8'd247 : current_38k_value <= -16'sd2468;
+        8'd248 : current_38k_value <= -16'sd1646;
+        8'd249 : current_38k_value <= -16'sd823;
+        default: current_38k_value <= 16'sd0;
+    endcase
+    
+    if(phase_div_by_two == 0) begin
+        if(phase_19k == 249) begin
+            phase_19k <= 0;
+        end else begin
+            phase_19k <= phase_19k + 8'd1;
+        end
+        case(phase_19k)
+            8'd0   : current_pilot_val <= 12'sd0;
+            8'd1   : current_pilot_val <= 12'sd45;
+            8'd2   : current_pilot_val <= 12'sd90;
+            8'd3   : current_pilot_val <= 12'sd136;
+            8'd4   : current_pilot_val <= 12'sd181;
+            8'd5   : current_pilot_val <= 12'sd226;
+            8'd6   : current_pilot_val <= 12'sd270;
+            8'd7   : current_pilot_val <= 12'sd315;
+            8'd8   : current_pilot_val <= 12'sd359;
+            8'd9   : current_pilot_val <= 12'sd404;
+            8'd10  : current_pilot_val <= 12'sd448;
+            8'd11  : current_pilot_val <= 12'sd491;
+            8'd12  : current_pilot_val <= 12'sd535;
+            8'd13  : current_pilot_val <= 12'sd578;
+            8'd14  : current_pilot_val <= 12'sd620;
+            8'd15  : current_pilot_val <= 12'sd663;
+            8'd16  : current_pilot_val <= 12'sd704;
+            8'd17  : current_pilot_val <= 12'sd746;
+            8'd18  : current_pilot_val <= 12'sd787;
+            8'd19  : current_pilot_val <= 12'sd827;
+            8'd20  : current_pilot_val <= 12'sd867;
+            8'd21  : current_pilot_val <= 12'sd907;
+            8'd22  : current_pilot_val <= 12'sd945;
+            8'd23  : current_pilot_val <= 12'sd984;
+            8'd24  : current_pilot_val <= 12'sd1021;
+            8'd25  : current_pilot_val <= 12'sd1058;
+            8'd26  : current_pilot_val <= 12'sd1094;
+            8'd27  : current_pilot_val <= 12'sd1130;
+            8'd28  : current_pilot_val <= 12'sd1165;
+            8'd29  : current_pilot_val <= 12'sd1199;
+            8'd30  : current_pilot_val <= 12'sd1232;
+            8'd31  : current_pilot_val <= 12'sd1265;
+            8'd32  : current_pilot_val <= 12'sd1297;
+            8'd33  : current_pilot_val <= 12'sd1328;
+            8'd34  : current_pilot_val <= 12'sd1358;
+            8'd35  : current_pilot_val <= 12'sd1387;
+            8'd36  : current_pilot_val <= 12'sd1415;
+            8'd37  : current_pilot_val <= 12'sd1443;
+            8'd38  : current_pilot_val <= 12'sd1469;
+            8'd39  : current_pilot_val <= 12'sd1495;
+            8'd40  : current_pilot_val <= 12'sd1520;
+            8'd41  : current_pilot_val <= 12'sd1544;
+            8'd42  : current_pilot_val <= 12'sd1566;
+            8'd43  : current_pilot_val <= 12'sd1588;
+            8'd44  : current_pilot_val <= 12'sd1609;
+            8'd45  : current_pilot_val <= 12'sd1629;
+            8'd46  : current_pilot_val <= 12'sd1647;
+            8'd47  : current_pilot_val <= 12'sd1665;
+            8'd48  : current_pilot_val <= 12'sd1682;
+            8'd49  : current_pilot_val <= 12'sd1697;
+            8'd50  : current_pilot_val <= 12'sd1712;
+            8'd51  : current_pilot_val <= 12'sd1725;
+            8'd52  : current_pilot_val <= 12'sd1738;
+            8'd53  : current_pilot_val <= 12'sd1749;
+            8'd54  : current_pilot_val <= 12'sd1759;
+            8'd55  : current_pilot_val <= 12'sd1768;
+            8'd56  : current_pilot_val <= 12'sd1776;
+            8'd57  : current_pilot_val <= 12'sd1783;
+            8'd58  : current_pilot_val <= 12'sd1789;
+            8'd59  : current_pilot_val <= 12'sd1793;
+            8'd60  : current_pilot_val <= 12'sd1796;
+            8'd61  : current_pilot_val <= 12'sd1799;
+            8'd62  : current_pilot_val <= 12'sd1800;
+            8'd63  : current_pilot_val <= 12'sd1800;
+            8'd64  : current_pilot_val <= 12'sd1799;
+            8'd65  : current_pilot_val <= 12'sd1796;
+            8'd66  : current_pilot_val <= 12'sd1793;
+            8'd67  : current_pilot_val <= 12'sd1789;
+            8'd68  : current_pilot_val <= 12'sd1783;
+            8'd69  : current_pilot_val <= 12'sd1776;
+            8'd70  : current_pilot_val <= 12'sd1768;
+            8'd71  : current_pilot_val <= 12'sd1759;
+            8'd72  : current_pilot_val <= 12'sd1749;
+            8'd73  : current_pilot_val <= 12'sd1738;
+            8'd74  : current_pilot_val <= 12'sd1725;
+            8'd75  : current_pilot_val <= 12'sd1712;
+            8'd76  : current_pilot_val <= 12'sd1697;
+            8'd77  : current_pilot_val <= 12'sd1682;
+            8'd78  : current_pilot_val <= 12'sd1665;
+            8'd79  : current_pilot_val <= 12'sd1647;
+            8'd80  : current_pilot_val <= 12'sd1629;
+            8'd81  : current_pilot_val <= 12'sd1609;
+            8'd82  : current_pilot_val <= 12'sd1588;
+            8'd83  : current_pilot_val <= 12'sd1566;
+            8'd84  : current_pilot_val <= 12'sd1544;
+            8'd85  : current_pilot_val <= 12'sd1520;
+            8'd86  : current_pilot_val <= 12'sd1495;
+            8'd87  : current_pilot_val <= 12'sd1469;
+            8'd88  : current_pilot_val <= 12'sd1443;
+            8'd89  : current_pilot_val <= 12'sd1415;
+            8'd90  : current_pilot_val <= 12'sd1387;
+            8'd91  : current_pilot_val <= 12'sd1358;
+            8'd92  : current_pilot_val <= 12'sd1328;
+            8'd93  : current_pilot_val <= 12'sd1297;
+            8'd94  : current_pilot_val <= 12'sd1265;
+            8'd95  : current_pilot_val <= 12'sd1232;
+            8'd96  : current_pilot_val <= 12'sd1199;
+            8'd97  : current_pilot_val <= 12'sd1165;
+            8'd98  : current_pilot_val <= 12'sd1130;
+            8'd99  : current_pilot_val <= 12'sd1094;
+            8'd100 : current_pilot_val <= 12'sd1058;
+            8'd101 : current_pilot_val <= 12'sd1021;
+            8'd102 : current_pilot_val <= 12'sd984;
+            8'd103 : current_pilot_val <= 12'sd945;
+            8'd104 : current_pilot_val <= 12'sd907;
+            8'd105 : current_pilot_val <= 12'sd867;
+            8'd106 : current_pilot_val <= 12'sd827;
+            8'd107 : current_pilot_val <= 12'sd787;
+            8'd108 : current_pilot_val <= 12'sd746;
+            8'd109 : current_pilot_val <= 12'sd704;
+            8'd110 : current_pilot_val <= 12'sd663;
+            8'd111 : current_pilot_val <= 12'sd620;
+            8'd112 : current_pilot_val <= 12'sd578;
+            8'd113 : current_pilot_val <= 12'sd535;
+            8'd114 : current_pilot_val <= 12'sd491;
+            8'd115 : current_pilot_val <= 12'sd448;
+            8'd116 : current_pilot_val <= 12'sd404;
+            8'd117 : current_pilot_val <= 12'sd359;
+            8'd118 : current_pilot_val <= 12'sd315;
+            8'd119 : current_pilot_val <= 12'sd270;
+            8'd120 : current_pilot_val <= 12'sd226;
+            8'd121 : current_pilot_val <= 12'sd181;
+            8'd122 : current_pilot_val <= 12'sd136;
+            8'd123 : current_pilot_val <= 12'sd90;
+            8'd124 : current_pilot_val <= 12'sd45;
+            8'd125 : current_pilot_val <= 12'sd0;
+            8'd126 : current_pilot_val <= -12'sd45;
+            8'd127 : current_pilot_val <= -12'sd90;
+            8'd128 : current_pilot_val <= -12'sd136;
+            8'd129 : current_pilot_val <= -12'sd181;
+            8'd130 : current_pilot_val <= -12'sd226;
+            8'd131 : current_pilot_val <= -12'sd270;
+            8'd132 : current_pilot_val <= -12'sd315;
+            8'd133 : current_pilot_val <= -12'sd359;
+            8'd134 : current_pilot_val <= -12'sd404;
+            8'd135 : current_pilot_val <= -12'sd448;
+            8'd136 : current_pilot_val <= -12'sd491;
+            8'd137 : current_pilot_val <= -12'sd535;
+            8'd138 : current_pilot_val <= -12'sd578;
+            8'd139 : current_pilot_val <= -12'sd620;
+            8'd140 : current_pilot_val <= -12'sd663;
+            8'd141 : current_pilot_val <= -12'sd704;
+            8'd142 : current_pilot_val <= -12'sd746;
+            8'd143 : current_pilot_val <= -12'sd787;
+            8'd144 : current_pilot_val <= -12'sd827;
+            8'd145 : current_pilot_val <= -12'sd867;
+            8'd146 : current_pilot_val <= -12'sd907;
+            8'd147 : current_pilot_val <= -12'sd945;
+            8'd148 : current_pilot_val <= -12'sd984;
+            8'd149 : current_pilot_val <= -12'sd1021;
+            8'd150 : current_pilot_val <= -12'sd1058;
+            8'd151 : current_pilot_val <= -12'sd1094;
+            8'd152 : current_pilot_val <= -12'sd1130;
+            8'd153 : current_pilot_val <= -12'sd1165;
+            8'd154 : current_pilot_val <= -12'sd1199;
+            8'd155 : current_pilot_val <= -12'sd1232;
+            8'd156 : current_pilot_val <= -12'sd1265;
+            8'd157 : current_pilot_val <= -12'sd1297;
+            8'd158 : current_pilot_val <= -12'sd1328;
+            8'd159 : current_pilot_val <= -12'sd1358;
+            8'd160 : current_pilot_val <= -12'sd1387;
+            8'd161 : current_pilot_val <= -12'sd1415;
+            8'd162 : current_pilot_val <= -12'sd1443;
+            8'd163 : current_pilot_val <= -12'sd1469;
+            8'd164 : current_pilot_val <= -12'sd1495;
+            8'd165 : current_pilot_val <= -12'sd1520;
+            8'd166 : current_pilot_val <= -12'sd1544;
+            8'd167 : current_pilot_val <= -12'sd1566;
+            8'd168 : current_pilot_val <= -12'sd1588;
+            8'd169 : current_pilot_val <= -12'sd1609;
+            8'd170 : current_pilot_val <= -12'sd1629;
+            8'd171 : current_pilot_val <= -12'sd1647;
+            8'd172 : current_pilot_val <= -12'sd1665;
+            8'd173 : current_pilot_val <= -12'sd1682;
+            8'd174 : current_pilot_val <= -12'sd1697;
+            8'd175 : current_pilot_val <= -12'sd1712;
+            8'd176 : current_pilot_val <= -12'sd1725;
+            8'd177 : current_pilot_val <= -12'sd1738;
+            8'd178 : current_pilot_val <= -12'sd1749;
+            8'd179 : current_pilot_val <= -12'sd1759;
+            8'd180 : current_pilot_val <= -12'sd1768;
+            8'd181 : current_pilot_val <= -12'sd1776;
+            8'd182 : current_pilot_val <= -12'sd1783;
+            8'd183 : current_pilot_val <= -12'sd1789;
+            8'd184 : current_pilot_val <= -12'sd1793;
+            8'd185 : current_pilot_val <= -12'sd1796;
+            8'd186 : current_pilot_val <= -12'sd1799;
+            8'd187 : current_pilot_val <= -12'sd1800;
+            8'd188 : current_pilot_val <= -12'sd1800;
+            8'd189 : current_pilot_val <= -12'sd1799;
+            8'd190 : current_pilot_val <= -12'sd1796;
+            8'd191 : current_pilot_val <= -12'sd1793;
+            8'd192 : current_pilot_val <= -12'sd1789;
+            8'd193 : current_pilot_val <= -12'sd1783;
+            8'd194 : current_pilot_val <= -12'sd1776;
+            8'd195 : current_pilot_val <= -12'sd1768;
+            8'd196 : current_pilot_val <= -12'sd1759;
+            8'd197 : current_pilot_val <= -12'sd1749;
+            8'd198 : current_pilot_val <= -12'sd1738;
+            8'd199 : current_pilot_val <= -12'sd1725;
+            8'd200 : current_pilot_val <= -12'sd1712;
+            8'd201 : current_pilot_val <= -12'sd1697;
+            8'd202 : current_pilot_val <= -12'sd1682;
+            8'd203 : current_pilot_val <= -12'sd1665;
+            8'd204 : current_pilot_val <= -12'sd1647;
+            8'd205 : current_pilot_val <= -12'sd1629;
+            8'd206 : current_pilot_val <= -12'sd1609;
+            8'd207 : current_pilot_val <= -12'sd1588;
+            8'd208 : current_pilot_val <= -12'sd1566;
+            8'd209 : current_pilot_val <= -12'sd1544;
+            8'd210 : current_pilot_val <= -12'sd1520;
+            8'd211 : current_pilot_val <= -12'sd1495;
+            8'd212 : current_pilot_val <= -12'sd1469;
+            8'd213 : current_pilot_val <= -12'sd1443;
+            8'd214 : current_pilot_val <= -12'sd1415;
+            8'd215 : current_pilot_val <= -12'sd1387;
+            8'd216 : current_pilot_val <= -12'sd1358;
+            8'd217 : current_pilot_val <= -12'sd1328;
+            8'd218 : current_pilot_val <= -12'sd1297;
+            8'd219 : current_pilot_val <= -12'sd1265;
+            8'd220 : current_pilot_val <= -12'sd1232;
+            8'd221 : current_pilot_val <= -12'sd1199;
+            8'd222 : current_pilot_val <= -12'sd1165;
+            8'd223 : current_pilot_val <= -12'sd1130;
+            8'd224 : current_pilot_val <= -12'sd1094;
+            8'd225 : current_pilot_val <= -12'sd1058;
+            8'd226 : current_pilot_val <= -12'sd1021;
+            8'd227 : current_pilot_val <= -12'sd984;
+            8'd228 : current_pilot_val <= -12'sd945;
+            8'd229 : current_pilot_val <= -12'sd907;
+            8'd230 : current_pilot_val <= -12'sd867;
+            8'd231 : current_pilot_val <= -12'sd827;
+            8'd232 : current_pilot_val <= -12'sd787;
+            8'd233 : current_pilot_val <= -12'sd746;
+            8'd234 : current_pilot_val <= -12'sd704;
+            8'd235 : current_pilot_val <= -12'sd663;
+            8'd236 : current_pilot_val <= -12'sd620;
+            8'd237 : current_pilot_val <= -12'sd578;
+            8'd238 : current_pilot_val <= -12'sd535;
+            8'd239 : current_pilot_val <= -12'sd491;
+            8'd240 : current_pilot_val <= -12'sd448;
+            8'd241 : current_pilot_val <= -12'sd404;
+            8'd242 : current_pilot_val <= -12'sd359;
+            8'd243 : current_pilot_val <= -12'sd315;
+            8'd244 : current_pilot_val <= -12'sd270;
+            8'd245 : current_pilot_val <= -12'sd226;
+            8'd246 : current_pilot_val <= -12'sd181;
+            8'd247 : current_pilot_val <= -12'sd136;
+            8'd248 : current_pilot_val <= -12'sd90;
+            8'd249 : current_pilot_val <= -12'sd45;
+            default: current_pilot_val <= 12'sd0;
+        endcase
+    end
+
+    diff_modulated <= audio_diff_675k * current_38k_value;
+    diff_modulated_scaled <= diff_modulated[31:16];
+    phase_div_by_two <= phase_div_by_two + 1;
+
+    audio_current_sample <= audio_sum_675k + current_pilot_val + diff_modulated_scaled;
+    radio_current_sample <= $unsigned($signed(`PHASE_INC) + audio_current_sample);
+end
+
+
+
+
+endmodule
+

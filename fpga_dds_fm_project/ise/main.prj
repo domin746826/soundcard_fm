@@ -1,0 +1,4 @@
+verilog work "../main.v"
+verilog work "../fm_stereo.v"
+verilog work "../radio_tx.v"
+verilog work "../i2s.v"
