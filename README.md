@@ -9,7 +9,7 @@ A sophisticated hybrid embedded system combining **FPGA** and **STM32F4** microc
 
 This project implements a complete **USB Audio Device** that doubles as an **FM stereo transmitter**:
 
-- **Host Interface**: USB 2.0 Full-Speed Audio Device (plug-and-play on Linux/Windows/macOS)
+- **Host Interface**: USB 2.0 Full-Speed Audio Device (plug-and-play on Linux/Windows/macOS/Android)
 - **Audio Processing**: Pre-emphasis filter (50 µs time constant) on STM32
 - **I2S Link**: Real-time stereo audio streaming from STM32 to FPGA
 - **RF Modulation**: Hardware FM stereo encoder on FPGA with DDS-based synthesizer
@@ -65,22 +65,21 @@ Sample rate: 48 kHz
 - ✅ FM stereo encoder (ITU-R BS.412-9 compliant)
   - L/R sum multiplex path (baseband 0-15 kHz)
   - L/R difference modulated on 38 kHz subcarrier
-  - 19 kHz pilot tone insertion
-  - Stereo pilot for automatic detection
-- ✅ RF transmitter with digital upconversion
-  - DCM-based clock multiplier (10 MHz → 180-200 MHz)
+  - 19 kHz pilot tone
+- ✅ DDS based RF transmitter
+  - DCM-based clock (200MHz)
   - GPIO-based bit-banged RF output
 
 ## Hardware Requirements
 
 | Component | Specification |
 |-----------|---------------|
-| **Microcontroller** | STM32F401CC (168 MHz ARM Cortex-M4) |
-| **FPGA** | Xilinx Spartan (ISE 14.7 compatible) |
-| **Crystal** | 10 MHz reference clock (shared) |
-| **USB** | Full-Speed (12 Mbps), Type-B connector |
-| **Audio I2S** | STM32 I2S2 ↔ FPGA I2S slave |
-| **RF Output** | GPIO bit-bang or analog reconstruction |
+| **Microcontroller** | STM32F401CCu6 (84 MHz ARM Cortex-M4) |
+| **FPGA** | Xilinx Spartan XC3S250E (ISE 14.7 compatible) |
+| **Crystal** | 10 MHz reference clock |
+| **USB** | Full-Speed (12 Mbps) |
+| **Audio I2S** | STM32 I2S2 master ↔ FPGA I2S slave |
+| **RF Output** | GPIO bit-bang |
 
 ## Software Architecture
 
@@ -141,16 +140,12 @@ tSamFreq: 48000 Hz
 bBitResolution: 16 bits
 ```
 
-### Endpoint Configuration
-- **EP0**: Control (device management, feature requests)
-- **EP1**: Isochronous IN (audio stream from host)
-- **EP82**: Interrupt (optional status)
 
 ### Pre-emphasis Filter Response
 The STM32 applies broadcast-standard pre-emphasis before FM modulation:
 - Boost high frequencies by ~17 dB @ 10 kHz
 - Time constant: τ = 50 µs
-- Purpose: Improve SNR in FM transmission
+- Purpose: Improve SNR in FM transmission and audio quality (as FM transmitters do de-emphasis on their side)
 
 ## Compilation & Deployment
 
@@ -184,16 +179,17 @@ openocd -f board/stm32f4discovery.cfg \
 **Xilinx ISE Flow:**
 ```bash
 cd fpga_dds_fm_project
-make bitstream
+make
 # Output: main.bit
 ```
 
 **Program FPGA:**
 ```bash
-# JTAG programming
-impact -batch <impact_commands>
-# Or use Vivado Hardware Manager
+make upload
+# or for permament
+make flash
 ```
+But it all depends on board
 
 **Verilog Simulation:**
 ```bash
@@ -255,26 +251,6 @@ The I2S slave on FPGA synchronizes with STM32:
 - **Frame sync**: LRCLK (48 kHz)
 - **Data**: 32-bit frames (16-bit L + 16-bit R per frame)
 
-## Performance Metrics
-
-| Metric | Value |
-|--------|-------|
-| USB Latency | ~1-2 ms (isochronous) |
-| Audio Buffer | 8192 samples = 170.67 ms |
-| Pre-emphasis Delay | 1 sample (~21 µs) |
-| FM Modulation Index | ~5 (±2.5 kHz deviation / 500 Hz audio) |
-| THD (estimated) | < 1% |
-| RF Output Level | Configurable (GPIO → RF amp) |
-
-## Power Consumption (Estimated)
-
-| Domain | Current |
-|--------|---------|
-| STM32F4 (running) | ~50 mA |
-| FPGA (Spartan @ 180 MHz) | ~40 mA |
-| USB Bus | ±100 mA (negotiated) |
-| **Total** | **~190 mA @ 5V** |
-
 ## Known Limitations & Future Improvements
 
 ### Current Limitations
@@ -292,17 +268,7 @@ The I2S slave on FPGA synchronizes with STM32:
 - [ ] Better clock synchronization (adaptive)
 - [ ] Analog RF amplifier + filter board
 
-## Debugging & Troubleshooting
 
-
-### Debug Output (UART)
-```
-=== Soundcard FM System ===
-USB Device: [OK] Audio Class 2.0
-I2S Receiver: [OK] 48 kHz
-FPGA Link: [OK] Data flowing
-Buffer Underruns: 0
-```
 
 ## File Reference
 
@@ -317,13 +283,6 @@ Buffer Underruns: 0
 | `fpga_dds_fm_project/main.v` | FPGA top-level |
 | `fpga_dds_fm_project/fm_stereo.v` | FM encoder (main RTL) |
 | `CMakePresets.json` | Build presets |
-
-## References
-
-- **STM32F4 HAL**: [STM32F4 Reference Manual RM0081](https://www.st.com/content/dam/literature/datasheet/stm32f401xb_xc.pdf)
-- **USB Audio**: [USB Device Class Definition for Audio Devices Release 1.0](https://www.usb.org/sites/default/files/audio10.pdf)
-- **FM Modulation**: [ITU-R BS.412-9 (EBU R22)](https://www.itu.int/rec/R-REC-BS.412/en) - Stereo sound broadcasting
-- **Xilinx Spartan**: ISE 14.7 Design Suite, DCM User Guide
 
 ## License
 
